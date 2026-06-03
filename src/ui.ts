@@ -1,5 +1,5 @@
 import { parseJobPayload } from "./job";
-import type { AdCopy, HermesJob, PatchTextFieldJob, RelayoutFallbackAdsJob } from "./types";
+import type { AdCopy, HermesJob, PatchTextFieldJob, RelayoutFallbackAdsJob, RetagHermesMetadataJob } from "./types";
 
 const DEFAULT_QUEUE_URL = "http://localhost:8787";
 const DEFAULT_QUEUE_TOKEN = "0ae77f98bf1197ea9a2a65c145279a8f2be309ef6f32d2195d4d8630e46c33b8";
@@ -80,6 +80,13 @@ async function pollQueue() {
       parent.postMessage({ pluginMessage: { type: "relayoutFallbackAds", job: payload } }, "*");
       return;
     }
+    if (isRetagHermesMetadataJob(payload)) {
+      currentJobId = payload.jobId;
+      lastJobEl.textContent = payload.jobId;
+      statusEl.textContent = `Retagging Hermes metadata ${payload.jobId}...`;
+      parent.postMessage({ pluginMessage: { type: "retagHermesMetadata", job: payload } }, "*");
+      return;
+    }
 
     const job = parseJobPayload(JSON.stringify(payload));
     currentJobId = job.jobId;
@@ -102,6 +109,12 @@ function isRelayoutFallbackAdsJob(value: unknown): value is RelayoutFallbackAdsJ
   if (!value || typeof value !== "object") return false;
   const record = value as Record<string, unknown>;
   return record.mode === "relayoutFallbackAds";
+}
+
+function isRetagHermesMetadataJob(value: unknown): value is RetagHermesMetadataJob {
+  if (!value || typeof value !== "object") return false;
+  const record = value as Record<string, unknown>;
+  return record.mode === "retagHermesMetadata";
 }
 
 async function reportJob(status: "completed" | "failed", jobId: string, message: string) {

@@ -37,6 +37,20 @@ figma.ui.onmessage = async (message: PluginMessage) => {
     return;
   }
 
+  if (message.type === "retagHermesMetadata") {
+    try {
+      const count = await retagHermesMetadata();
+      const successMessage = `Retagged ${count} Hermes node${count === 1 ? "" : "s"} with shared metadata.`;
+      figma.notify(successMessage);
+      figma.ui.postMessage({ type: "generated", jobId: message.job.jobId, message: successMessage });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Could not retag Hermes metadata.";
+      figma.notify(errorMessage, { error: true });
+      figma.ui.postMessage({ type: "error", message: errorMessage });
+    }
+    return;
+  }
+
   if (message.type !== "generate") return;
 
   try {
@@ -359,9 +373,10 @@ function tagMonthPage(page: PageNode, ad?: AdCopy) {
 
 function tagCategoryPage(page: PageNode, ad?: AdCopy) {
   page.setSharedPluginData(HERMES_NAMESPACE, "pageType", "category");
-  page.setSharedPluginData(HERMES_NAMESPACE, "pageKey", categoryKey(ad));
-  page.setSharedPluginData(HERMES_NAMESPACE, "categoryKey", categoryKey(ad));
-  page.setSharedPluginData(HERMES_NAMESPACE, "category", categoryPageName(ad));
+  const key = ad ? categoryKey(ad) : normalize(page.name);
+  page.setSharedPluginData(HERMES_NAMESPACE, "pageKey", key);
+  page.setSharedPluginData(HERMES_NAMESPACE, "categoryKey", key);
+  page.setSharedPluginData(HERMES_NAMESPACE, "category", ad ? categoryPageName(ad) : page.name);
 }
 
 function hierarchyPageKey(ad?: AdCopy) {
@@ -488,6 +503,10 @@ function monthKey(ad?: AdCopy) {
 
 function categoryKey(ad?: AdCopy) {
   return normalize(categoryPageName(ad));
+}
+
+function categoryAlias(category: string) {
+  return /^(weight\s*loss|wl)$/i.test(category) ? "Weight Loss" : category || "Weight Loss";
 }
 
 function nextBatchX() {
@@ -709,6 +728,64 @@ function setSharedHermesData(node: BaseNode & PluginDataMixin, ad: AdCopy, nodeT
   node.setSharedPluginData(HERMES_NAMESPACE, "projectId", ad.projectId || "");
   node.setSharedPluginData(HERMES_NAMESPACE, "round", ad.round || "");
   node.setSharedPluginData(HERMES_NAMESPACE, "conceptKey", conceptKey(ad.id));
+}
+
+async function retagHermesMetadata() {
+  await figma.loadAllPagesAsync();
+  let count = 0;
+
+  for (const page of figma.root.children) {
+    count += retagPageMetadata(page);
+  }
+
+  const hermesNodes = figma.root.findAll((node) => {
+    if (!("getPluginData" in node)) return false;
+    const nodeType = node.getPluginData("hermesNodeType");
+    return nodeType === "ad" || nodeType === "copyField";
+  }) as Array<SceneNode & PluginDataMixin>;
+
+  for (const node of hermesNodes) {
+    const nodeType = node.getPluginData("hermesNodeType");
+    const adId = node.getPluginData("adId");
+    if (!adId) continue;
+    node.setSharedPluginData(HERMES_NAMESPACE, "nodeType", nodeType);
+    node.setSharedPluginData(HERMES_NAMESPACE, "adId", adId);
+    node.setSharedPluginData(HERMES_NAMESPACE, "field", node.getPluginData("field") || "");
+    node.setSharedPluginData(HERMES_NAMESPACE, "brand", node.getPluginData("brand") || "");
+    node.setSharedPluginData(HERMES_NAMESPACE, "category", node.getPluginData("category") || "");
+    node.setSharedPluginData(HERMES_NAMESPACE, "categoryKey", normalize(categoryAlias(node.getPluginData("category") || "")));
+    node.setSharedPluginData(HERMES_NAMESPACE, "projectId", node.getPluginData("projectId") || "");
+    node.setSharedPluginData(HERMES_NAMESPACE, "round", node.getPluginData("round") || "");
+    node.setSharedPluginData(HERMES_NAMESPACE, "conceptKey", conceptKey(adId));
+    count += 1;
+  }
+
+  return count;
+}
+
+function retagPageMetadata(page: PageNode) {
+  const normalized = normalize(page.name);
+  if (isCategoryPageName(page.name)) {
+    tagCategoryPage(page);
+    return 1;
+  }
+  if (page.name.startsWith("🗓️")) {
+    page.setSharedPluginData(HERMES_NAMESPACE, "pageType", "month");
+    page.setSharedPluginData(HERMES_NAMESPACE, "monthKey", normalized.replace(/^🗓️\s*/, "").replace(/\s*-+$/, "").trim());
+    return 1;
+  }
+  if (/^\s*↳\s*R\d+/i.test(page.name)) {
+    page.setSharedPluginData(HERMES_NAMESPACE, "pageType", "round");
+    page.setSharedPluginData(HERMES_NAMESPACE, "round", normalizeRound(page.name));
+    return 1;
+  }
+  if (/^\s*↳\s*/.test(page.name)) {
+    page.setSharedPluginData(HERMES_NAMESPACE, "pageType", "project");
+    const projectMatch = page.name.match(/^\s*↳\s*([^:]+)/);
+    page.setSharedPluginData(HERMES_NAMESPACE, "projectId", projectMatch ? projectMatch[1].trim() : "");
+    return 1;
+  }
+  return 0;
 }
 
 function createAdUnit(adFrame: FrameNode, ad: AdCopy, includePrimaryText: boolean) {

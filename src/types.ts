@@ -81,4 +81,14 @@ export type RelayoutFallbackAdsMessage = {
   job: RelayoutFallbackAdsJob;
 };
 
-export type PluginMessage = GenerateMessage | PatchTextFieldMessage | RelayoutFallbackAdsMessage;
+export type RetagHermesMetadataJob = {
+  jobId: string;
+  mode: "retagHermesMetadata";
+};
+
+export type RetagHermesMetadataMessage = {
+  type: "retagHermesMetadata";
+  job: RetagHermesMetadataJob;
+};
+
+export type PluginMessage = GenerateMessage | PatchTextFieldMessage | RelayoutFallbackAdsMessage | RetagHermesMetadataMessage;
