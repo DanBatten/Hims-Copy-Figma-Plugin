@@ -8,8 +8,7 @@
   "documentAccess": "dynamic-page",
   "networkAccess": {
     "allowedDomains": [
-      "http://localhost:8787",
-      "http://172.31.46.177:8787"
+      "http://localhost:8787"
     ],
     "reasoning": "Worker mode polls a local Hermes job queue and reports render status."
   }

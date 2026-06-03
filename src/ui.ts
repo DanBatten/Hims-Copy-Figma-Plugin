@@ -1,7 +1,7 @@
 import { parseJobPayload } from "./job";
 import type { AdCopy, HermesJob, PatchTextFieldJob, RelayoutFallbackAdsJob } from "./types";
 
-const DEFAULT_QUEUE_URL = "http://172.31.46.177:8787";
+const DEFAULT_QUEUE_URL = "http://localhost:8787";
 const DEFAULT_QUEUE_TOKEN = "0ae77f98bf1197ea9a2a65c145279a8f2be309ef6f32d2195d4d8630e46c33b8";
 const POLL_INTERVAL_MS = 5000;
 
