@@ -4,8 +4,8 @@
   "private": true,
   "description": "Figma plugin that translates Hermes copy briefs into populated ad layouts.",
   "scripts": {
-    "build": "npm run clean && node scripts/build.mjs",
-    "clean": "rm -rf dist",
+    "build": "node scripts/build.mjs",
+    "clean": "node scripts/build.mjs --clean-only",
     "comment-watcher": "node server/comment-watcher.mjs",
     "queue": "node server/job-queue.mjs",
     "smoke": "node scripts/smoke-parse.mjs",

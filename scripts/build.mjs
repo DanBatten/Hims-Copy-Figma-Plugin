@@ -1,5 +1,11 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { build } from "esbuild";
+
+await rm("dist", { force: true, recursive: true });
+
+if (process.argv.includes("--clean-only")) {
+  process.exit(0);
+}
 
 await mkdir("dist", { recursive: true });
 
