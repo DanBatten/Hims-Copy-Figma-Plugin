@@ -1,6 +1,7 @@
 import type { AdCopy, PluginMessage } from "./types";
 
 let loadedFallbackFont: FontName = { family: "Inter", style: "Regular" };
+const HERMES_NAMESPACE = "hermes";
 
 figma.showUI(__html__, { width: 220, height: 88, themeColors: true });
 
@@ -261,14 +262,15 @@ function currentMonthName() {
 
 function getOrCreatePage(pageName: string, ad?: AdCopy) {
   ensureMonthSeparator(pageName, ad);
-  const normalized = normalize(pageName);
-  const existing = figma.root.children.find((page) => normalize(page.name) === normalized);
+  const existing = findHierarchyPage(pageName, ad);
   if (existing) {
+    tagHierarchyPage(existing, pageName, ad);
     movePageIntoHierarchy(existing, ad);
     return existing;
   }
   const page = figma.createPage();
   page.name = pageName;
+  tagHierarchyPage(page, pageName, ad);
   movePageIntoHierarchy(page, ad);
   return page;
 }
@@ -282,6 +284,7 @@ function ensureMonthSeparator(targetPageName: string, ad?: AdCopy) {
   }
   const page = figma.createPage();
   page.name = monthSeparatorName(ad);
+  tagMonthPage(page, ad);
   moveMonthSeparator(page, ad);
 }
 
@@ -325,11 +328,60 @@ function projectPageNameFromAd(ad?: AdCopy) {
   return projectPageName(ad);
 }
 
+function findHierarchyPage(pageName: string, ad?: AdCopy) {
+  const key = hierarchyPageKey(ad);
+  if (key) {
+    const byKey = figma.root.children.find((page) => page.getSharedPluginData(HERMES_NAMESPACE, "pageKey") === key);
+    if (byKey) return byKey;
+  }
+  const normalized = normalize(pageName);
+  return figma.root.children.find((page) => normalize(page.name) === normalized);
+}
+
+function tagHierarchyPage(page: PageNode, pageName: string, ad?: AdCopy) {
+  page.setSharedPluginData(HERMES_NAMESPACE, "pageType", isRoundPageName(pageName) ? "round" : "project");
+  page.setSharedPluginData(HERMES_NAMESPACE, "pageKey", hierarchyPageKey(ad) || normalize(pageName));
+  page.setSharedPluginData(HERMES_NAMESPACE, "categoryKey", categoryKey(ad));
+  page.setSharedPluginData(HERMES_NAMESPACE, "category", categoryPageName(ad));
+  page.setSharedPluginData(HERMES_NAMESPACE, "monthKey", monthKey(ad));
+  page.setSharedPluginData(HERMES_NAMESPACE, "month", monthLabel(ad));
+  page.setSharedPluginData(HERMES_NAMESPACE, "projectId", ad && ad.projectId ? ad.projectId : "");
+  page.setSharedPluginData(HERMES_NAMESPACE, "round", normalizeRound(ad && ad.round ? ad.round : "R1"));
+}
+
+function tagMonthPage(page: PageNode, ad?: AdCopy) {
+  page.setSharedPluginData(HERMES_NAMESPACE, "pageType", "month");
+  page.setSharedPluginData(HERMES_NAMESPACE, "pageKey", monthPageKey(ad));
+  page.setSharedPluginData(HERMES_NAMESPACE, "categoryKey", categoryKey(ad));
+  page.setSharedPluginData(HERMES_NAMESPACE, "monthKey", monthKey(ad));
+  page.setSharedPluginData(HERMES_NAMESPACE, "month", monthLabel(ad));
+}
+
+function tagCategoryPage(page: PageNode, ad?: AdCopy) {
+  page.setSharedPluginData(HERMES_NAMESPACE, "pageType", "category");
+  page.setSharedPluginData(HERMES_NAMESPACE, "pageKey", categoryKey(ad));
+  page.setSharedPluginData(HERMES_NAMESPACE, "categoryKey", categoryKey(ad));
+  page.setSharedPluginData(HERMES_NAMESPACE, "category", categoryPageName(ad));
+}
+
+function hierarchyPageKey(ad?: AdCopy) {
+  if (!ad) return "";
+  const project = normalize(ad.projectId || "Unassigned");
+  const round = normalizeRound(ad.round || "R1");
+  return `${categoryKey(ad)}:${monthKey(ad)}:${project}:${round}`;
+}
+
+function monthPageKey(ad?: AdCopy) {
+  return `${categoryKey(ad)}:${monthKey(ad)}`;
+}
+
 function monthSeparatorName(ad?: AdCopy) {
   return `🗓️ ${monthLabel(ad)} ------------------------------`;
 }
 
 function monthSeparatorPage(ad?: AdCopy) {
+  const byKey = figma.root.children.find((page) => page.getSharedPluginData(HERMES_NAMESPACE, "pageKey") === monthPageKey(ad));
+  if (byKey) return byKey;
   const separatorName = monthSeparatorName(ad);
   const categoryIndex = categoryPageIndex(ad);
   if (categoryIndex === -1) return figma.root.children.find((page) => normalize(page.name) === normalize(separatorName));
@@ -357,7 +409,8 @@ function nextSectionBoundaryIndex(separatorIndex: number, ad?: AdCopy) {
 
 function nextMonthSeparatorIndex(separatorIndex: number) {
   for (let index = separatorIndex + 1; index < figma.root.children.length; index += 1) {
-    if (figma.root.children[index].name.startsWith("🗓️")) return index;
+    const page = figma.root.children[index];
+    if (page.getSharedPluginData(HERMES_NAMESPACE, "pageType") === "month" || page.name.startsWith("🗓️")) return index;
   }
   return -1;
 }
@@ -377,19 +430,26 @@ function categoryPageName(ad?: AdCopy) {
 }
 
 function categoryPageIndex(ad?: AdCopy) {
-  const name = categoryPageName(ad);
-  let index = pageIndex(name);
+  const key = categoryKey(ad);
+  let index = figma.root.children.findIndex((page) => page.getSharedPluginData(HERMES_NAMESPACE, "pageType") === "category" && page.getSharedPluginData(HERMES_NAMESPACE, "categoryKey") === key);
   if (index !== -1) return index;
+  const name = categoryPageName(ad);
+  index = pageIndex(name);
+  if (index !== -1) {
+    tagCategoryPage(figma.root.children[index], ad);
+    return index;
+  }
   const page = figma.createPage();
   page.name = name;
+  tagCategoryPage(page, ad);
   index = figma.root.children.indexOf(page);
   return index;
 }
 
 function nextCategoryPageIndex(categoryIndex: number) {
   for (let index = categoryIndex + 1; index < figma.root.children.length; index += 1) {
-    const pageName = figma.root.children[index].name;
-    if (isCategoryPageName(pageName)) return index;
+    const page = figma.root.children[index];
+    if (page.getSharedPluginData(HERMES_NAMESPACE, "pageType") === "category" || isCategoryPageName(page.name)) return index;
   }
   return -1;
 }
@@ -420,6 +480,14 @@ function movePageToIndex(page: PageNode, targetIndex: number) {
 function monthLabel(ad?: AdCopy) {
   const raw = (ad && ad.month ? ad.month : currentMonthName()).split(" ")[0];
   return raw.toUpperCase();
+}
+
+function monthKey(ad?: AdCopy) {
+  return normalize(monthLabel(ad));
+}
+
+function categoryKey(ad?: AdCopy) {
+  return normalize(categoryPageName(ad));
 }
 
 function nextBatchX() {
@@ -608,6 +676,7 @@ function tagAdFrame(frame: FrameNode, ad: AdCopy) {
   frame.setPluginData("projectId", ad.projectId || "");
   frame.setPluginData("round", ad.round || "");
   if (!frame.getPluginData("layoutMode")) frame.setPluginData("layoutMode", "template");
+  setSharedHermesData(frame, ad, "ad");
 
   const textNodes = frame.findAll((node) => node.type === "TEXT") as TextNode[];
   for (const node of textNodes) {
@@ -626,6 +695,20 @@ function tagTextNode(node: TextNode, ad: AdCopy, field: string, value: string) {
   node.setPluginData("projectId", ad.projectId || "");
   node.setPluginData("round", ad.round || "");
   node.setPluginData("copy", value);
+  setSharedHermesData(node, ad, "copyField", normalizeField(field));
+}
+
+function setSharedHermesData(node: BaseNode & PluginDataMixin, ad: AdCopy, nodeType: string, field = "") {
+  node.setSharedPluginData(HERMES_NAMESPACE, "nodeType", nodeType);
+  node.setSharedPluginData(HERMES_NAMESPACE, "adId", ad.id);
+  node.setSharedPluginData(HERMES_NAMESPACE, "field", field);
+  node.setSharedPluginData(HERMES_NAMESPACE, "brand", ad.brand);
+  node.setSharedPluginData(HERMES_NAMESPACE, "category", ad.category || "");
+  node.setSharedPluginData(HERMES_NAMESPACE, "categoryKey", categoryKey(ad));
+  node.setSharedPluginData(HERMES_NAMESPACE, "monthKey", monthKey(ad));
+  node.setSharedPluginData(HERMES_NAMESPACE, "projectId", ad.projectId || "");
+  node.setSharedPluginData(HERMES_NAMESPACE, "round", ad.round || "");
+  node.setSharedPluginData(HERMES_NAMESPACE, "conceptKey", conceptKey(ad.id));
 }
 
 function createAdUnit(adFrame: FrameNode, ad: AdCopy, includePrimaryText: boolean) {

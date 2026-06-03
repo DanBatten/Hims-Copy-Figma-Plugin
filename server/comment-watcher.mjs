@@ -1,5 +1,5 @@
 import { mkdir, writeFile } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { createHmac } from "node:crypto";
 
@@ -12,6 +12,7 @@ const commentDir = path.join(root, "comments");
 const pollIntervalMs = Number(process.env.COMMENT_WATCH_INTERVAL_MS || 60000);
 const hermesRevisionUrl = process.env.HERMES_REVISION_URL || "";
 const hermesRevisionToken = process.env.HERMES_REVISION_TOKEN || "";
+const hermesNamespace = "hermes";
 
 if (!figmaToken) throw new Error("FIGMA_TOKEN is required.");
 if (!fileKey) throw new Error("FIGMA_FILE_KEY is required.");
@@ -90,25 +91,28 @@ async function resolveTargetFromFigma(comment, messageTarget) {
   if (!nodeId) return messageTarget;
 
   try {
-    const data = await figmaJson(`/v1/files/${fileKey}/nodes?ids=${encodeURIComponent(nodeId)}`);
+    const data = await figmaJson(`/v1/files/${fileKey}/nodes?ids=${encodeURIComponent(nodeId)}&plugin_data=shared`);
     const root = data.nodes && data.nodes[nodeId] && data.nodes[nodeId].document;
     if (!root) return messageTarget;
+
+    const directTarget = targetFromSharedPluginData(root, messageTarget);
+    if (directTarget.adId || directTarget.field) return canonicalizeTarget(directTarget);
 
     const pointCandidates = commentPointCandidates(root, comment.client_meta);
     const textNodes = collectTextNodes(root);
     const matchingFieldNodes = messageTarget.field
-      ? textNodes.filter((node) => normalizeField(node.name) === normalizeField(messageTarget.field))
+      ? textNodes.filter((node) => node.field === normalizeField(messageTarget.field))
       : textNodes;
     const candidates = matchingFieldNodes.length ? matchingFieldNodes : textNodes;
     const targetNode = nearestNode(candidates, pointCandidates) || candidates[0];
     if (!targetNode) return messageTarget;
 
-    return {
-      adId: messageTarget.adId || adIdFromAncestors(targetNode.ancestors),
-      field: messageTarget.field || normalizeField(targetNode.node.name),
+    return canonicalizeTarget({
+      adId: messageTarget.adId || targetNode.adId || adIdFromAncestors(targetNode.ancestors),
+      field: messageTarget.field || targetNode.field || normalizeField(targetNode.node.name),
       clientMeta: comment.client_meta || null,
       figmaNodeId: targetNode.node.id || ""
-    };
+    });
   } catch (error) {
     console.error(`Could not resolve Figma node ${nodeId}:`, error instanceof Error ? error.message : error);
     return messageTarget;
@@ -129,9 +133,10 @@ function collectTextNodes(root) {
   const result = [];
   walk(root, [], (node, ancestors) => {
     if (node.type !== "TEXT") return;
-    const field = normalizeField(node.name || "");
+    const shared = sharedHermes(node);
+    const field = normalizeField(shared.field || node.name || "");
     if (!knownFields().includes(field)) return;
-    result.push({ node, ancestors });
+    result.push({ node, ancestors, adId: shared.adId || "", field });
   });
   return result;
 }
@@ -190,10 +195,101 @@ function distanceToBox(box, point) {
 
 function adIdFromAncestors(ancestors) {
   for (let index = ancestors.length - 1; index >= 0; index -= 1) {
+    const sharedAdId = sharedHermes(ancestors[index]).adId;
+    if (sharedAdId) return sharedAdId;
     const match = String(ancestors[index].name || "").match(/\b(?:HERS|HIMS)-[A-Z0-9]+(?:-[A-Z0-9]+)+\b/i);
     if (match) return match[0].toUpperCase();
   }
   return "";
+}
+
+function targetFromSharedPluginData(root, messageTarget) {
+  const shared = sharedHermes(root);
+  const rootField = normalizeField(shared.field || root.name || "");
+  if (shared.adId || knownFields().includes(rootField)) {
+    return {
+      adId: messageTarget.adId || shared.adId || "",
+      field: messageTarget.field || (knownFields().includes(rootField) ? rootField : ""),
+      clientMeta: messageTarget.clientMeta || null,
+      figmaNodeId: root.id || ""
+    };
+  }
+  return messageTarget;
+}
+
+function sharedHermes(node) {
+  const data = node && node.sharedPluginData && node.sharedPluginData[hermesNamespace];
+  return data && typeof data === "object" ? data : {};
+}
+
+function canonicalizeTarget(target) {
+  const resolvedAdId = canonicalAdId(target.adId);
+  return {
+    ...target,
+    adId: resolvedAdId || target.adId || ""
+  };
+}
+
+function canonicalAdId(adId) {
+  const raw = String(adId || "").toUpperCase();
+  if (!raw) return "";
+  const candidates = knownAdIds();
+  if (candidates.includes(raw)) return raw;
+  const rawConcept = conceptKey(raw);
+  const conceptMatch = candidates.find((candidate) => conceptKey(candidate) === rawConcept);
+  if (conceptMatch) return conceptMatch;
+  const prefixMatch = candidates.find((candidate) => raw.startsWith(`${conceptKey(candidate)}-`) || raw.startsWith(conceptKey(candidate)));
+  return prefixMatch || "";
+}
+
+let knownAdIdCache = null;
+function knownAdIds() {
+  if (knownAdIdCache) return knownAdIdCache;
+  knownAdIdCache = [];
+  const dirs = ["queued", "processing", "completed", "failed"];
+  for (const dir of dirs) {
+    const fullDir = path.join(root, dir);
+    if (!existsSync(fullDir)) continue;
+    for (const file of safeReadDir(fullDir)) {
+      if (!file.endsWith(".json")) continue;
+      const job = safeReadJson(path.join(fullDir, file));
+      for (const ad of job && Array.isArray(job.ads) ? job.ads : []) {
+        if (ad && ad.id) knownAdIdCache.push(String(ad.id).toUpperCase());
+      }
+    }
+  }
+  knownAdIdCache = [...new Set(knownAdIdCache)].sort();
+  return knownAdIdCache;
+}
+
+function safeReadDir(dir) {
+  try {
+    return readdirSync(dir);
+  } catch {
+    return [];
+  }
+}
+
+function safeReadJson(file) {
+  try {
+    return JSON.parse(readFileSync(file, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+function conceptKey(value) {
+  return normalize(value)
+    .replace(/\s*\+\s*POST COPY\b/g, "")
+    .replace(/\s*\((?:4X5|9X16|1X1|16X9|STORIES?)\)\s*$/g, "")
+    .replace(/-(?:45|916|11|169)(?=\b|\s|$)/g, "")
+    .replace(/\b(?:4X5|9X16|1X1|16X9|STORIES?)\b/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function normalize(value) {
+  return String(value || "").trim().toUpperCase().replace(/[_\s]+/g, " ");
 }
 
 function knownFields() {
