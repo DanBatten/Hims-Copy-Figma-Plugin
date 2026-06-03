@@ -1,0 +1,15 @@
+[Unit]
+Description=Hermes Figma Comment Watcher
+After=network.target hermes-figma-queue.service
+
+[Service]
+Type=simple
+User=ec2-user
+WorkingDirectory=/opt/hermes-figma-queue
+EnvironmentFile=/etc/hermes-figma-queue.env
+ExecStart=/usr/bin/node /opt/hermes-figma-queue/server/comment-watcher.mjs
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

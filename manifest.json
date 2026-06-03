@@ -1,0 +1,16 @@
+{
+  "name": "Hermes Copy Translator",
+  "id": "hermes-copy-translator",
+  "api": "1.0.0",
+  "main": "dist/code.js",
+  "ui": "dist/ui.html",
+  "editorType": ["figma"],
+  "documentAccess": "dynamic-page",
+  "networkAccess": {
+    "allowedDomains": [
+      "http://localhost:8787",
+      "http://172.31.46.177:8787"
+    ],
+    "reasoning": "Worker mode polls a local Hermes job queue and reports render status."
+  }
+}

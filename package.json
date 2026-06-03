@@ -1,0 +1,23 @@
+{
+  "name": "figma-hermes-copy-plugin",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Figma plugin that translates Hermes copy briefs into populated ad layouts.",
+  "scripts": {
+    "build": "npm run clean && node scripts/build.mjs",
+    "clean": "rm -rf dist",
+    "comment-watcher": "node server/comment-watcher.mjs",
+    "queue": "node server/job-queue.mjs",
+    "smoke": "node scripts/smoke-parse.mjs",
+    "to-json": "node scripts/brief-to-job.mjs",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@figma/plugin-typings": "^1.109.0",
+    "esbuild": "^0.25.5",
+    "typescript": "^5.8.3"
+  },
+  "dependencies": {
+    "jszip": "^3.10.1"
+  }
+}

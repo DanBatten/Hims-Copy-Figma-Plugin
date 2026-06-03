@@ -1,0 +1,51 @@
+<main>
+  <section>
+    <h1>Hermes Bridge</h1>
+    <p id="status">Starting listener...</p>
+    <span id="queue">http://172.31.46.177:8787</span>
+    <span id="last-job">None yet</span>
+  </section>
+</main>
+<!-- UI_SCRIPT -->
+<style>
+  :root {
+    color: var(--figma-color-text);
+    background: var(--figma-color-bg);
+    font: 12px/1.45 Inter, system-ui, sans-serif;
+  }
+
+  body {
+    margin: 0;
+  }
+
+  main {
+    min-height: 100vh;
+    padding: 10px 12px;
+    box-sizing: border-box;
+  }
+
+  section {
+    display: grid;
+    gap: 4px;
+  }
+
+  h1 {
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.2;
+  }
+
+  p {
+    margin: 0;
+    font-size: 11px;
+    line-height: 1.25;
+    color: var(--figma-color-text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  span {
+    display: none;
+  }
+</style>
