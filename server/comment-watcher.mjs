@@ -17,6 +17,7 @@ const requiredMentions = (process.env.FIGMA_COMMENT_REQUIRED_MENTION || "copy.ag
   .split(",")
   .map((mention) => mention.trim().toLowerCase())
   .filter(Boolean);
+let knownAdIdCache = null;
 
 if (!figmaToken) throw new Error("FIGMA_TOKEN is required.");
 if (!fileKey) throw new Error("FIGMA_FILE_KEY is required.");
@@ -247,11 +248,10 @@ function canonicalAdId(adId) {
   return prefixMatch || "";
 }
 
-let knownAdIdCache = null;
 function knownAdIds() {
   if (knownAdIdCache) return knownAdIdCache;
   knownAdIdCache = [];
-  const dirs = ["queued", "processing", "completed", "failed"];
+  const dirs = ["queued", "inflight", "completed", "failed"];
   for (const dir of dirs) {
     const fullDir = path.join(root, dir);
     if (!existsSync(fullDir)) continue;
