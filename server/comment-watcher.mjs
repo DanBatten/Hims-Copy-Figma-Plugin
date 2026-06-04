@@ -13,7 +13,10 @@ const pollIntervalMs = Number(process.env.COMMENT_WATCH_INTERVAL_MS || 60000);
 const hermesRevisionUrl = process.env.HERMES_REVISION_URL || "";
 const hermesRevisionToken = process.env.HERMES_REVISION_TOKEN || "";
 const hermesNamespace = "hermes";
-const requiredMention = (process.env.FIGMA_COMMENT_REQUIRED_MENTION || "copy.agent@forhims.com").toLowerCase();
+const requiredMentions = (process.env.FIGMA_COMMENT_REQUIRED_MENTION || "copy.agent@forhims.com,copy agent")
+  .split(",")
+  .map((mention) => mention.trim().toLowerCase())
+  .filter(Boolean);
 
 if (!figmaToken) throw new Error("FIGMA_TOKEN is required.");
 if (!fileKey) throw new Error("FIGMA_FILE_KEY is required.");
@@ -39,7 +42,7 @@ async function poll() {
 async function processComment(comment) {
   if (!comment || !comment.id || comment.resolved_at) return;
   if (!comment.message || isAgentStatusComment(comment.message)) return;
-  if (requiredMention && !mentionsAgent(comment.message, requiredMention)) return;
+  if (requiredMentions.length > 0 && !mentionsAgent(comment.message, requiredMentions)) return;
 
   const statePath = path.join(commentDir, `${safeId(fileKey)}-${safeId(comment.id)}.json`);
   if (existsSync(statePath)) return;
@@ -345,9 +348,9 @@ function isAgentStatusComment(message) {
   return /^✅?\s*(Updated|Implemented|Applied)\b/i.test(message.trim());
 }
 
-function mentionsAgent(message, required) {
+function mentionsAgent(message, requiredMentions) {
   const normalized = stripHtml(String(message || "")).toLowerCase();
-  return normalized.includes(required);
+  return requiredMentions.some((required) => normalized.includes(required));
 }
 
 function stripHtml(value) {
